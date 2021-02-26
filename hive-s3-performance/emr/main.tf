@@ -21,7 +21,7 @@ resource "aws_emr_cluster" "cluster" {
 
 	core_instance_group {
 		instance_type  = "c4.large"
-		instance_count = 1
+		instance_count = 2
 
 		ebs_config {
 			size                 = "40"
@@ -62,6 +62,13 @@ resource "aws_emr_cluster" "cluster" {
 	}
 ]
 EOF
+}
+
+resource "aws_emr_instance_group" "task_nodes" {
+  cluster_id     = aws_emr_cluster.cluster.id
+  instance_count = 2
+  instance_type  = "m5.xlarge"
+  name           = "Hive-S3 Performance Test Task Nodes"
 }
 
 data "aws_instance" "master" {
