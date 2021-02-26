@@ -7,8 +7,8 @@ resource "aws_lb" "master_lb" {
 
 resource "aws_lb_target_group" "zeppelin" {
   name     = "cluster-zeppelin-target-group"
-  port     = "8893"
-  protocol = "HTTPS"
+  port     = "8890"
+  protocol = "HTTP"
   vpc_id   = var.cluster_vpc_id
 
   health_check {

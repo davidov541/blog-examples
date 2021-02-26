@@ -26,3 +26,7 @@ module "load-balancer" {
 	cluster_vpc_id = module.networking.cluster_vpc_id
 	emr_master_id = module.emr.emr_master_id
 }
+
+module "s3" {
+	source = "./s3"
+}
