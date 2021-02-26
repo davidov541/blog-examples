@@ -1,181 +1,5 @@
-terraform {
-	required_providers {
-		aws = {
-			version = "~> 3.27"
-		}
-	}
-}
-
-provider "aws" {
-	profile = "default"
-	region  = "us-east-2"
-}
-
-resource "aws_vpc" "cluster_vpc" {
-	cidr_block           = "10.0.0.0/16"
-	enable_dns_hostnames = true
-
-	tags = {
-		Name = "Hive-S3 Performance Test VPC"
-	}
-}
-
-resource "aws_internet_gateway" "cluster_internet_gateway" {
-	vpc_id = aws_vpc.cluster_vpc.id
-
-	tags = {
-		Name = "Hive-S3 Performance Test Internet Gateway"
-	}
-}
-
-resource "aws_subnet" "cluster_subnet" {
-	vpc_id            = aws_vpc.cluster_vpc.id
-	cidr_block        = "10.0.1.0/24"
-	availability_zone = "us-east-2a"
-
-	tags = {
-		Name = "Hive-S3 Performance Test Subnet"
-	}
-}
-
-resource "aws_subnet" "backup_subnet" {
-	vpc_id            = aws_vpc.cluster_vpc.id
-	cidr_block        = "10.0.2.0/24"
-	availability_zone = "us-east-2b"
-
-	tags = {
-		Name = "Hive-S3 Performance Test Backup Subnet"
-	}
-}
-
-resource "aws_route_table" "cluster_route_table" {
-	vpc_id = aws_vpc.cluster_vpc.id
-	route {
-		cidr_block = "0.0.0.0/0"
-		gateway_id = aws_internet_gateway.cluster_internet_gateway.id
-	}
-	tags = {
-		Name = "Hive-S3 Performance Test Route Table"
-	}
-}
-
-resource "aws_route_table_association" "cluster_subnet_route_table_association" {
-	subnet_id      = aws_subnet.cluster_subnet.id
-	route_table_id = aws_route_table.cluster_route_table.id
-}
-
-resource "aws_route_table_association" "backup_subnet_route_table_association" {
-	subnet_id      = aws_subnet.backup_subnet.id
-	route_table_id = aws_route_table.cluster_route_table.id
-}
-
-resource "aws_security_group" "lb_security_group" {
-  name                   = "load-balancer-security-group"
-  vpc_id                 = aws_vpc.cluster_vpc.id
-  revoke_rules_on_delete = "true"
-
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
-
-resource "aws_security_group" "master_security_group" {
-  name                   = "master-security-group"
-  vpc_id                 = aws_vpc.cluster_vpc.id
-  revoke_rules_on_delete = "true"
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
-
-resource "aws_security_group" "core_security_group" {
-  name                   = "core-security-group"
-  vpc_id                 = aws_vpc.cluster_vpc.id
-  revoke_rules_on_delete = "true"
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
-
-resource "aws_security_group_rule" "lb_to_master" {
-  type                     = "ingress"
-  from_port                = 8890
-  to_port                  = 8890
-  protocol                 = "tcp"
-  source_security_group_id = aws_security_group.lb_security_group.id
-  security_group_id        = aws_security_group.master_security_group.id
-}
-
-resource "aws_security_group_rule" "ssh_to_master" {
-  type              = "ingress"
-  from_port         = 22
-  to_port           = 22
-  protocol          = "tcp"
-  cidr_blocks       = ["0.0.0.0/0"]
-  security_group_id = aws_security_group.master_security_group.id
-}
-
-resource "aws_security_group_rule" "master_to_master" {
-  type                     = "ingress"
-  from_port                = 0
-  to_port                  = 65535
-  protocol                 = "-1"
-  source_security_group_id = aws_security_group.master_security_group.id
-  security_group_id        = aws_security_group.master_security_group.id
-}
-
-resource "aws_security_group_rule" "core_to_core" {
-  type                     = "ingress"
-  from_port                = 0
-  to_port                  = 65535
-  protocol                 = "-1"
-  source_security_group_id = aws_security_group.core_security_group.id
-  security_group_id        = aws_security_group.core_security_group.id
-}
-
-resource "aws_security_group_rule" "ssh_to_core" {
-  type              = "ingress"
-  from_port         = 22
-  to_port           = 22
-  protocol          = "tcp"
-  cidr_blocks       = ["0.0.0.0/0"]
-  security_group_id = aws_security_group.core_security_group.id
-}
-
-resource "aws_security_group_rule" "master_to_core" {
-  type                     = "ingress"
-  from_port                = 0
-  to_port                  = 65535
-  protocol                 = "-1"
-  source_security_group_id = aws_security_group.master_security_group.id
-  security_group_id        = aws_security_group.core_security_group.id
-}
-
-resource "aws_security_group_rule" "core_to_master" {
-  type                     = "ingress"
-  from_port                = 0
-  to_port                  = 65535
-  protocol                 = "-1"
-  source_security_group_id = aws_security_group.core_security_group.id
-  security_group_id        = aws_security_group.master_security_group.id
+module "networking" {
+	source = "./networking"
 }
 
 data "aws_iam_policy_document" "emr_assume_role" {
@@ -236,9 +60,9 @@ resource "aws_emr_cluster" "cluster" {
 	keep_job_flow_alive_when_no_steps = true
 
 	ec2_attributes {
-		subnet_id                         = aws_subnet.cluster_subnet.id
-		emr_managed_master_security_group = aws_security_group.master_security_group.id
-		emr_managed_slave_security_group  = aws_security_group.core_security_group.id
+		subnet_id                         = module.networking.cluster_subnet_id
+		emr_managed_master_security_group = module.networking.master_security_group
+		emr_managed_slave_security_group  = module.networking.core_security_group
 		instance_profile                  = aws_iam_instance_profile.cluster_profile.arn
 		key_name                          = var.ssh_key_name
 	}
@@ -302,15 +126,15 @@ data "aws_instance" "master" {
 resource "aws_lb" "master_lb" {
   name               = "cluster-load-balancer"
   load_balancer_type = "application"
-  security_groups    = [aws_security_group.lb_security_group.id]
-  subnets            = [aws_subnet.cluster_subnet.id, aws_subnet.backup_subnet.id]
+  security_groups    = [module.networking.load_balancer_security_group]
+  subnets            = [module.networking.cluster_subnet_id, module.networking.backup_subnet_id]
 }
 
 resource "aws_lb_target_group" "zeppelin" {
   name     = "cluster-zeppelin-target-group"
   port     = "8893"
   protocol = "HTTPS"
-  vpc_id   = aws_vpc.cluster_vpc.id
+  vpc_id   = module.networking.cluster_vpc_id
 
   health_check {
     protocol = "HTTP"
